@@ -1,27 +1,31 @@
-# GNX Voice Agent · v0.0.1
+# GNX Voice Agent · v0.0.2
 
-**GNX composes existing services; it does not rebuild them.**
+**GNX composes existing services. It does not rebuild their responsibilities.**
 
 ```text
-TEXT       = canonical protocol
-MCP        = capabilities / control
-HF_TOKEN   = primary public-cloud credential
-OmniRoute  = private AI gateway
-Oryx       = voice / media runtime
-PWA        = interface
-GNX        = configuration + composition + correlation
+PWA → text → voice.gnx → thin API → MCP model.complete → HF | omniroute.gnx
+                                      ↓ final text
+                              MCP voice.speak → oryx.gnx → audio → PWA
 ```
 
-First-pass source code, delivered without installing dependencies, running the application, or executing tests. Not production-hardened. No subagents were used.
+TEXT is the protocol. MCP is the capability/control plane. `HF_TOKEN` is the public-cloud credential. OmniRoute is the private AI gateway. Oryx owns voice/media. GNX owns composition and minimal correlation only.
 
-## Configuration first
+Tracking: [REALEASES.md](REALEASES.md) records release changes and verification; [FEATURES.md](FEATURES.md) records capability scope and pending work.
 
-Copy `.env.example` to `.env`. The key settings are:
+## Configure service identities first
+
+Copy `.env.example` to `.env` for the server topology:
 
 ```dotenv
+BIND_HOST=127.0.0.1
+PORT=8080
+APP_ORIGIN=https://voice.gnx
+GNX_API_TOKEN=
+
 CLOUD_ROUTE=public
-HF_TOKEN=hf_your_token
-HF_MODEL=your-supported-model
+HF_TOKEN=
+HF_MODEL=
+HF_BASE_URL=https://router.huggingface.co/v1
 
 OMNIROUTE_BASE_URL=https://omniroute.gnx/v1
 OMNIROUTE_API_KEY=
@@ -29,180 +33,108 @@ OMNIROUTE_MODEL=
 
 ORYX_BASE_URL=https://oryx.gnx
 ORYX_PUBLIC_BASE_URL=https://oryx.gnx
-ORYX_TOKEN=
-ORYX_VOICE_PATH=
+ORYX_API_SECRET=
 VOICE_ENABLED=false
-TTS_MODEL=
-TTS_VOICE=default
+ORYX_VOICE_PATH=
 
 MCP_CONFIG_PATH=config/mcp.json
 ```
 
-- **Public:** Hugging Face through `HF_TOKEN`, with an explicitly selected inference model. A PRO subscription does not guarantee every model/provider is available or free.
-- **Private:** OmniRoute through its configured OpenAI-compatible gateway. Set `CLOUD_ROUTE=private` and `OMNIROUTE_MODEL`. Privacy still depends on that gateway's upstreams.
-- **Voice:** Oryx is the architectural owner of synthesis and media. Enable only when its deployment exposes the bridge contract below.
-- Restart the backend after configuration changes; no PWA rebuild is required.
-- Secrets stay server-side. `.env` is Git-ignored.
+`BIND_HOST` is a process binding, not product identity. `APP_ORIGIN` is the browser-facing origin and the allowlisted Origin header for API requests. Defaults in code use `*.gnx` too. `app.gnx` and `compute.gnx` remain untouched.
 
-## Run
+For local development, copy `.env.dev.example` to `.env` instead. It explicitly uses loopback origins and ports. Do not use a different browser hostname without updating `APP_ORIGIN`.
 
-Requires Node.js 22+ and npm. From the repository root:
+Requires Node.js 22+:
 
 ```sh
-cp .env.example .env
-# Edit .env: at minimum HF_TOKEN and HF_MODEL for the public route.
-npm install
+npm ci
 npm start
 ```
 
-PowerShell users can use `Copy-Item .env.example .env` instead of `cp`.
+Use `npm run dev` for watch mode. `npm run mcp` starts the stdio runtime for an external MCP host. Production opens at **https://voice.gnx** behind your reverse proxy; the development profile opens at **http://127.0.0.1:8080**. PowerShell can copy profiles with `Copy-Item`.
 
-Open **https://voice.gnx** after configuring the server reverse proxy below. For local development, use **http://127.0.0.1:8080**. `npm run dev` enables Node's file watcher. `npm run mcp` starts the built-in stdio MCP server for an external MCP host; it is not an interactive shell command.
+Set `HF_TOKEN` and `HF_MODEL` for public inference. `Qwen/Qwen3-8B` passed the live HF probe for this release; availability and costs depend on the account/provider. HF PRO alone does not guarantee every inference model is available. Private mode requires the OmniRoute route/model and its deployment credentials. GNX does not duplicate gateway fallback, policy, or model catalogs.
 
-The app starts without model credentials so the UI can be inspected; inference fails until configured. `/health/live` reports process liveness, not upstream readiness. No lockfile is included because dependencies have not been installed; generate and commit one when validating this baseline.
-
-## Runtime
+## MCP capability plane
 
 ```text
-PWA → text → thin API → MCP model.complete → HF | OmniRoute
-                       ↓ final text
-                       MCP voice.speak → Oryx → audio URL → PWA
+mcp/bridge.js   connects GNX to configured MCP capabilities
+mcp/runtime.js  implements the bundled model and voice capabilities
 ```
 
-**Control path:** environment + `config/mcp.json` choose capability bindings and routes.
+`config/mcp.json` binds logical `model.complete` and `voice.speak` to actual tools. The browser never selects MCP servers or tools. Stdio servers receive only explicitly allowlisted application environment variables, plus the MCP SDK's basic OS launch environment. `GNX_API_TOKEN` is not passed to the bundled runtime. Trust each configured server with the credentials in its `env_allow` list.
 
-**Data path:** the selected model produces text; Oryx produces and serves audio. GNX never proxies or stores audio, sends HF credentials to the browser, or restores Oryx AI-Talk.
-
-### What is implemented
-
-- Thin Express API and static web serving.
-- Real MCP SDK client/server, with stdio and Streamable HTTP connections.
-- Built-in `model_complete` capability calling HF or OmniRoute chat completions.
-- Built-in `voice_speak` capability calling a configurable Oryx deployment bridge.
-- Configuration-based replacement of either capability with an existing MCP service.
-- Bounded, expiring in-memory correlation references; no database or message history.
-- Optional shared deployment token, input bounds, concurrent-turn bounds, safe text rendering, and generic client-facing errors.
-- Text UI, optional browser STT, editable transcript, explicit audio playback, and a static-shell PWA service worker.
-- Text preserved when speech fails. No silent provider fallback or automatic request replay.
-
-### Deliberate limits
-
-The bundled model capability is **one stateless completion**, not an autonomous agent. It does not select or execute other tools. For tool-enabled reasoning, bind `model.complete` to an existing MCP capability that owns that behavior and returns the contract below. GNX does not implement a proprietary agent loop.
-
-Correlation IDs do not create conversational memory in stateless HF/OmniRoute chat endpoints. The default route does not send previous messages. An external capability may consume native references and maintain its own context.
-
-There is no OIDC, SQLite, queue, artifact registry, durable replay protection, transactional lifecycle, streaming, or barge-in. Requests are synchronous: text is returned after the optional bounded voice attempt. Browser retries may repeat upstream work. A restart loses correlation mappings. The app is a single-instance, single-deployment-principal baseline, not a multi-tenant service.
-
-## MCP wiring
-
-`config/mcp.json` is GNX configuration, not a universal MCP config schema:
-
-```json
-{
-  "servers": {
-    "runtime": {
-      "transport": "stdio",
-      "command": "$NODE",
-      "args": ["mcp/server.js"]
-    }
-  },
-  "capabilities": {
-    "model.complete": { "server": "runtime", "tool": "model_complete" },
-    "voice.speak": { "server": "runtime", "tool": "voice_speak" }
-  }
-}
-```
-
-Only configured bindings are callable. Tool names are not accepted from browser input. Local MCP children inherit server environment variables: configure **trusted servers only**. `$NODE` resolves to the running Node executable; relative paths resolve from the repository root.
-
-For a remote reasoning service, add a server and point `model.complete` at its tool:
+An external binding can use Streamable HTTP:
 
 ```json
 {
   "transport": "http",
-  "url": "https://your-service.example/mcp",
+  "url": "https://reasoning.gnx/mcp",
   "token_env": "REASONING_MCP_TOKEN"
 }
 ```
 
-The service must support Streamable HTTP MCP, accept the GNX arguments, and return JSON in an MCP text content block. A transport connection alone does not adapt arbitrary tool schemas.
+Add this entry under `servers` and change the relevant capability's `server`/`tool` binding. Future reasoning, memory, or files capabilities need no change to `/v1/turns`. A configured tool must implement the GNX argument/output contract; arbitrary tool schemas are not automatically adapted.
 
-Both capabilities receive:
-
-```json
-{
-  "session_id": "client-generated UUID",
-  "turn_id": "client-generated UUID",
-  "text": "Hello",
-  "locale": "en-US",
-  "refs": {}
-}
-```
-
-`model.complete` returns:
+Both capabilities receive `{session_id, turn_id, text, locale, refs}`. Their MCP response includes a JSON text content block:
 
 ```json
-{"text":"Hello back","refs":{"hf_ref":"upstream-response-id"}}
+{"text":"The answer","refs":{"hf_ref":"native-response-id"}}
 ```
-
-`voice.speak` returns:
 
 ```json
-{"status":"ready","url":"https://media.example/short-lived-audio.mp3","mime_type":"audio/mpeg","refs":{"oryx_ref":"media-id"}}
+{"status":"ready","url":"https://oryx.gnx/audio/reference.aac","mime_type":"audio/aac","refs":{"oryx_ref":"native-media-id"}}
 ```
 
-Native references are optional, opaque, and must not be credentials. Only `hf_ref`, `omniroute_ref`, `mcp_ref`, and `oryx_ref` are retained. They are passed to capabilities but not returned to the browser. No reference is fabricated when an upstream does not supply one. A model response ID is not necessarily a reusable session ID.
+The bundled model capability performs **one stateless completion**, not an autonomous tool loop. Bind an existing reasoning capability if it needs tools or native conversation state. GNX keeps only expiring in-memory mappings of `session_id`, `turn_id`, and optional `hf_ref`, `omniroute_ref`, `mcp_ref`, `oryx_ref`. A response ID is not automatically a resumable session. No history, database, or credential belongs in these references.
 
-## Oryx voice/media wiring
+## Oryx owns voice and its AI configuration
 
-Oryx remains a principal runtime component, not a vendor-neutral storage plugin. GNX calls `voice.speak` through MCP; the built-in capability forwards final text to an **explicitly configured Oryx-side bridge**.
-
-**Important:** this repository does not contain an Oryx fork or claim a native `/v1/voice` endpoint exists. The deployment must provide the bridge or replace the MCP binding with an existing Oryx capability. Out-of-the-box voice remains disabled. This is the main external integration requirement, not a completed verified Oryx integration.
-
-The configured `ORYX_VOICE_PATH` receives a bearer-authenticated POST:
-
-```json
-{
-  "session_id":"UUID",
-  "turn_id":"UUID",
-  "text":"The final answer",
-  "locale":"en-US",
-  "model":"configured TTS model",
-  "voice":"default"
-}
-```
-
-Expected JSON response:
-
-```json
-{
-  "id":"oryx-native-reference",
-  "audio_url":"https://media.example/signed-or-session-authorized.mp3",
-  "mime_type":"audio/mpeg"
-}
-```
-
-Relative audio URLs are resolved against `ORYX_PUBLIC_BASE_URL`, falling back to `ORYX_BASE_URL`. Oryx must return browser-reachable media with appropriate expiry/access control. The browser never receives `ORYX_TOKEN`; a URL requiring that service bearer token will not play. Use HTTPS media for an HTTPS app. Oryx owns formats, transformation, retention, cleanup, and serving.
-
-### Oryx → OmniRoute TTS
-
-Configure the relevant Oryx AI integration using its **`AIBaseURL`** and **`AISecretKey`** fields, pointed at your OmniRoute deployment. OmniRoute's target speech surface is `/v1/audio/speech`; the resulting path should be:
+Configure Oryx persistently at deployment time:
 
 ```text
-MCP voice.speak → Oryx → OmniRoute /v1/audio/speech → TTS upstream
-                         ↓
-                  Oryx media delivery
+AIBaseURL      → https://omniroute.gnx/v1
+AISecretKey    → OmniRoute credential
+AIOrganization → deployment-specific, if required
 ```
 
-These are Oryx-side configuration fields, not ENV variables that GNX magically provisions. Confirm whether the deployed Oryx interface expects a host root or `/v1` base to avoid doubling the path. GNX's model-route switch does not reconfigure an external Oryx installation: switch its AI settings alongside the deployment profile.
+Confirm the base-path convention of the installed Oryx integration so `/v1` is not duplicated. GNX does not provision these fields, send them on turns, or own the TTS model, voice, or format.
 
-For public speech, configure an Oryx-compatible HF-backed TTS surface using `HF_TOKEN`. Do not assume the HF chat router also implements a universal `/audio/speech` endpoint. Task-specific HF TTS bridging, if needed by the chosen model, belongs beside Oryx—not in GNX. No native Oryx interface or model compatibility was verified during this first pass.
+The intended Oryx-side implementation is:
 
-## Minimal API
+```text
+voice.speak → Oryx primitive → CreateSpeech → OmniRoute /v1/audio/speech
+                              ↓
+                       Oryx media delivery
+```
 
-`GET /v1/capabilities` reports text, configured speech availability, and logical MCP capability names. Configured availability is not a live provider probe.
+The built-in MCP capability calls the explicitly configured `ORYX_VOICE_PATH` with `Authorization: Bearer <ORYX_API_SECRET>` and only:
 
-`POST /v1/turns`:
+```json
+{"session_id":"UUID","turn_id":"UUID","text":"Hello","locale":"en-US"}
+```
+
+Expected Oryx primitive response:
+
+```json
+{"id":"oryx-media-ref","audio_url":"https://oryx.gnx/audio/reference.aac","mime_type":"audio/aac"}
+```
+
+**Integration boundary:** no universal conversational TTS endpoint is claimed to exist in stock Oryx. This repository does not implement a new TTS server. Supply the actual Oryx-side primitive, or bind `voice.speak` to an existing MCP Oryx capability. `ORYX_VOICE_PATH` is deliberately blank until that interface is available. Do not point it at `/terraform/v1/dubbing/task-tts`: that endpoint serves Dubbing project/group audio, not arbitrary text synthesis. Do not revive AI-Talk.
+
+Enable `VOICE_ENABLED=true` once this path works. An external MCP voice binding does not require the bundled runtime's Oryx path. Failed speech preserves the text answer.
+
+Oryx owns audio authorization, expiry, transformation, serving, and cleanup. Returned media must be browser-reachable and independently authorized: the browser never receives the Oryx API secret. Relative URLs resolve against `ORYX_PUBLIC_BASE_URL`. API validation and CSP allow audio only from the application origin or configured Oryx public origin. HTTPS pages require HTTPS media. External redirects to other media origins are not enabled.
+
+For public HF-backed speech, the deployed Oryx integration must support the selected HF TTS surface; do not assume the HF chat router exposes a universal speech endpoint. The model-route switch does not silently reconfigure Oryx's stored AI settings.
+
+## API and PWA
+
+`GET /health/live` reports process liveness, not upstream readiness.
+
+`GET /v1/capabilities` reports configured text/voice capabilities, not verified upstream availability.
+
+`POST /v1/turns` accepts:
 
 ```json
 {
@@ -214,48 +146,25 @@ For public speech, configure an Oryx-compatible HF-backed TTS surface using `HF_
 }
 ```
 
-Response:
+Returns `{session_id, turn_id, text, speech}`. Speech status is `not_requested`, `ready`, `unavailable`, or `failed`. The call remains synchronous, including the bounded speech attempt. There is no durable idempotency or automatic replay.
 
-```json
-{
-  "session_id":"11111111-1111-4111-8111-111111111111",
-  "turn_id":"22222222-2222-4222-8222-222222222222",
-  "text":"Compose existing services rather than recreating them.",
-  "speech":{"status":"not_requested"}
-}
-```
-
-Speech may also be `ready`, `unavailable`, or `failed`. Failed speech does not fail a successful text turn. Invalid input returns `400`, missing configured token `401`, simultaneous session work `409`, capacity exhaustion `429`, and capability failure `502`. There is no exactly-once guarantee.
+The PWA handles only text, optional browser STT, transcript review, request state, text output, and playback. Browser STT may use vendor cloud processing; it is not a privacy guarantee. Only static assets are cached. Provider credentials and MCP topology remain server-side.
 
 ## Deployment boundary
 
-### Server `*.gnx` routing
+Proxy `https://voice.gnx/*` to the GNX process, including `/v1/*`; no separate API hostname or CORS setup is needed. Set `GNX_API_TOKEN` before exposing the proxy even with loopback binding. Enter only that application token in the PWA; it remains in page memory.
 
-`app.gnx` and `compute.gnx` are already occupied and must remain untouched. The deployment examples use these separate names; DNS and proxy configuration must be provisioned on your server:
+Configure DNS and trusted certificates for `*.gnx` on both the browser and runtime hosts. For a private CA, configure `NODE_EXTRA_CA_CERTS`; it is explicitly allowlisted for the bundled MCP child. Never disable TLS verification. Keep Oryx management interfaces protected even when serving media on its public origin.
 
-| Host | Purpose | Routing |
-| --- | --- | --- |
-| `https://voice.gnx` | GNX PWA + thin API | Proxy all paths to `127.0.0.1:8080` when the proxy shares the host |
-| `https://omniroute.gnx` | Private AI gateway | Proxy to the existing OmniRoute service; preserve `/v1/*` |
-| `https://oryx.gnx` | Oryx voice/media | Proxy to the existing Oryx deployment and its configured voice bridge/media paths |
+This remains a single-instance, shared-deployment-principal starter. The shared token is not per-user authorization. Place authentication, TLS, network restrictions, and rate limiting at the deployment boundary before public exposure. Correlation state is bounded and disappears on restart. No database, queues, agent framework, media proxy, or transactional lifecycle has been added.
 
-Keep the PWA and `/v1/*` on `voice.gnx`; no separate API domain or CORS setup is needed. Configure DNS resolution and HTTPS certificates trusted by both the browser and Node.js. For an internal CA, use the appropriate trust store / `NODE_EXTRA_CA_CERTS`; never disable TLS verification. Browser microphone and PWA features require a secure context.
-
-Set `GNX_API_TOKEN` before exposing `voice.gnx`, even though GNX binds to loopback. Restrict upstream admin interfaces: the Oryx hostname must not make its management endpoints publicly accessible. Media URLs must remain browser-reachable and independently authorized. These are configuration examples, not changes to your live DNS, certificates, or proxy. Local development defaults in code remain localhost; `.env` selects the server routes.
-
-Default binding is loopback. Set `GNX_API_TOKEN` for access control; binding to a non-loopback address requires it. Enter that **application token**, never `HF_TOKEN`, in the UI's connection settings. The UI keeps it only in page memory.
-
-Put TLS, real user authentication, rate limits, and network restrictions at a trusted deployment boundary before public exposure. The shared token does not establish per-user session ownership. Do not run this starter as a multi-user internet service unchanged. Configure request timeout limits at that boundary to accommodate sequential model and voice calls.
-
-Browser STT may use external vendor processing. It is optional, capability-detected, and never a privacy guarantee. Typing remains available. PWA caching covers only static assets; there is no offline inference or caching of API/audio data. Browser installation requirements vary; production icon packaging may need raster variants.
-
-## Repository
+## Layout
 
 ```text
-app/       thin HTTP API + transient correlation
-config/    validated environment + capability bindings
-mcp/       MCP client and built-in model/voice capabilities
-web/       lightweight PWA, speech input, playback
+app/       thin API + correlation
+config/    environment validation + capability bindings
+mcp/       bridge + runtime
+web/       PWA
 ```
 
-Next: install dependencies and lock them, validate an actual HF model, wire the concrete Oryx bridge, then connect an existing reasoning/tool capability if needed. Do not add storage or another agent framework before the service composition calls for it.
+See the tracking documents for actual verification results and the blocked Oryx deployment checks. Configuration support is not evidence of a working live service.

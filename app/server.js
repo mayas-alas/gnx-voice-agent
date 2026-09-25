@@ -2,11 +2,11 @@ import express from 'express';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { env } from '../config/env.js';
-import { capabilities, call, close } from '../mcp/client.js';
+import { env, mediaOrigins } from '../config/env.js';
+import { capabilities, call, close } from '../mcp/bridge.js';
 import { correlate } from './correlation.js';
 
-if (!['127.0.0.1', '::1', 'localhost'].includes(env.HOST) && !env.GNX_API_TOKEN) {
+if (!['127.0.0.1', '::1', 'localhost'].includes(env.BIND_HOST) && !env.GNX_API_TOKEN) {
   throw new Error('Non-loopback binding requires GNX_API_TOKEN (use TLS at the deployment boundary)');
 }
 const app = express();
@@ -14,12 +14,15 @@ app.disable('x-powered-by');
 app.use((_req, res, next) => {
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('Referrer-Policy', 'no-referrer');
-  res.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' https: http:; img-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'");
+  res.set('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' ${env.ORYX_PUBLIC_BASE_URL}; img-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'`);
   next();
 });
-app.get('/health/live', (_req, res) => res.json({ status: 'ok', version: '0.0.1' }));
+app.get('/health/live', (_req, res) => res.json({ status: 'ok', version: '0.0.2' }));
 app.use('/v1', (req, res, next) => {
   res.set('Cache-Control', 'no-store');
+  if (req.headers.origin && req.headers.origin !== env.APP_ORIGIN) {
+    return res.status(403).json({ error: { code: 'ORIGIN_NOT_ALLOWED' } });
+  }
   if (env.GNX_API_TOKEN) {
     const supplied = Buffer.from(req.headers.authorization || '');
     const expected = Buffer.from(`Bearer ${env.GNX_API_TOKEN}`);
@@ -67,7 +70,7 @@ app.post('/v1/turns', async (req, res) => {
           const audio = await call('voice.speak', { ...args, text: answer.text, refs: finalRefs });
           if (audio.status !== 'ready' || typeof audio.url !== 'string') throw new Error('Invalid voice output');
           const url = new URL(audio.url);
-          if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid audio URL');
+          if (!mediaOrigins.has(url.origin) || url.username || url.password) throw new Error('Invalid audio URL');
           finalRefs = correlate(input.session_id, input.turn_id, audio.refs || {});
           speech = { status: 'ready', url: url.href, mime_type: audio.mime_type };
         } catch {
@@ -87,7 +90,9 @@ app.use(express.static(fileURLToPath(new URL('../web/', import.meta.url))));
 app.use((error, _req, res, _next) => {
   res.status(error.type === 'entity.too.large' ? 413 : 400).json({ error: { code: 'INVALID_REQUEST' } });
 });
-const server = app.listen(env.PORT, env.HOST, () => console.log(`GNX v0.0.1: http://${env.HOST}:${env.PORT}`));
+const server = app.listen(env.PORT, env.BIND_HOST, () => {
+  console.log(`GNX v0.0.2: ${env.APP_ORIGIN} (binding ${env.BIND_HOST}:${env.PORT})`);
+});
 let stopping = false;
 async function shutdown() {
   if (stopping) return;

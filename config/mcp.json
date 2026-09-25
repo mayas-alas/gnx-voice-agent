@@ -1,6 +1,17 @@
 {
   "servers": {
-    "runtime": { "transport": "stdio", "command": "$NODE", "args": ["mcp/server.js"] }
+    "runtime": {
+      "transport": "stdio",
+      "command": "$NODE",
+      "args": ["mcp/runtime.js"],
+      "env_allow": [
+        "APP_ORIGIN", "CLOUD_ROUTE", "HF_TOKEN", "HF_MODEL", "HF_BASE_URL",
+        "OMNIROUTE_BASE_URL", "OMNIROUTE_API_KEY", "OMNIROUTE_MODEL",
+        "ORYX_BASE_URL", "ORYX_PUBLIC_BASE_URL", "ORYX_API_SECRET",
+        "ORYX_VOICE_PATH", "VOICE_ENABLED", "REQUEST_TIMEOUT_MS", "VOICE_TIMEOUT_MS",
+        "NODE_EXTRA_CA_CERTS"
+      ]
+    }
   },
   "capabilities": {
     "model.complete": { "server": "runtime", "tool": "model_complete" },

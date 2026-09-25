@@ -9,7 +9,7 @@ const settings = z.object({
   servers: z.record(z.object({
     transport: z.enum(['stdio', 'http']), command: z.string().optional(),
     args: z.array(z.string()).default([]), url: z.string().url().optional(),
-    token_env: z.string().optional(), env: z.record(z.string()).default({})
+    token_env: z.string().optional(), env_allow: z.array(z.string()).default([])
   })),
   capabilities: z.record(z.object({ server: z.string(), tool: z.string() }))
 }).parse(JSON.parse(await readFile(env.MCP_CONFIG_PATH, 'utf8')));
@@ -18,15 +18,17 @@ const connections = new Map();
 async function connect(name) {
   const config = settings.servers[name];
   if (!config) throw new Error('Unknown MCP server');
-  const client = new Client({ name: 'gnx-composer', version: '0.0.1' });
+  const client = new Client({ name: 'gnx-composer', version: '0.0.2' });
   let transport;
   if (config.transport === 'stdio') {
     if (!config.command) throw new Error('MCP stdio command is required');
     transport = new StdioClientTransport({
       command: config.command === '$NODE' ? process.execPath : config.command,
       args: config.args,
-      // Only configure trusted child servers: they inherit application credentials.
-      env: { ...process.env, ...config.env }, stderr: 'inherit'
+      // No blanket process.env inheritance. SDK adds basic OS launch variables only.
+      env: Object.fromEntries(config.env_allow
+        .filter(key => process.env[key] !== undefined)
+        .map(key => [key, process.env[key]])), stderr: 'inherit'
     });
   } else {
     if (!config.url) throw new Error('MCP HTTP URL is required');

@@ -1,9 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { env, modelRoute } from '../config/env.js';
+import { env, modelRoute, mediaOrigins } from '../config/env.js';
 
-const server = new McpServer({ name: 'gnx-runtime', version: '0.0.1' });
+const server = new McpServer({ name: 'gnx-runtime', version: '0.0.2' });
 const result = data => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
 const identity = {
   session_id: z.string().max(128),
@@ -13,6 +13,7 @@ const identity = {
 async function post(url, token, body, timeout) {
   const response = await fetch(url, {
     method: 'POST',
+    redirect: 'error',
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeout)
@@ -50,14 +51,17 @@ server.registerTool('voice_speak', {
   try {
     if (!env.VOICE_ENABLED) return result({ status: 'unavailable', code: 'VOICE_DISABLED' });
     // This bridge contract is application-defined, NOT a claimed native Oryx endpoint.
+    if (!env.ORYX_VOICE_PATH.startsWith('/') || !env.ORYX_API_SECRET) {
+      throw new Error('Configure ORYX_VOICE_PATH and ORYX_API_SECRET for the deployed Oryx primitive');
+    }
     const endpoint = new URL(env.ORYX_VOICE_PATH, env.ORYX_BASE_URL);
     if (endpoint.origin !== new URL(env.ORYX_BASE_URL).origin) throw new Error('Invalid Oryx bridge origin');
-    const data = await post(endpoint, env.ORYX_TOKEN, {
-      text, session_id, turn_id, locale, model: env.TTS_MODEL, voice: env.TTS_VOICE
+    const data = await post(endpoint, env.ORYX_API_SECRET, {
+      text, session_id, turn_id, locale
     }, env.VOICE_TIMEOUT_MS);
     if (typeof data.audio_url !== 'string') throw new Error('Oryx bridge must return audio_url');
     const audio = new URL(data.audio_url, env.ORYX_PUBLIC_BASE_URL || env.ORYX_BASE_URL);
-    if (!['http:', 'https:'].includes(audio.protocol) || audio.username || audio.password) {
+    if (!mediaOrigins.has(audio.origin) || audio.username || audio.password) {
       throw new Error('Invalid media URL');
     }
     return result({ status: 'ready', url: audio.href,
