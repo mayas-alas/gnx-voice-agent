@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "runtime": { "transport": "stdio", "command": "$NODE", "args": ["mcp/server.js"] }
+  },
+  "capabilities": {
+    "model.complete": { "server": "runtime", "tool": "model_complete" },
+    "voice.speak": { "server": "runtime", "tool": "voice_speak" }
+  }
+}

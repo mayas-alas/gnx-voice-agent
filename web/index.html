@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10151d">
+  <title>GNX · Text to voice</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main>
+    <header><a class="brand" href="/">GNX <span>VOICE / 0.0.1</span></a><button id="reset" type="button">New session</button></header>
+    <section class="intro"><p class="eyebrow">LESS INFRASTRUCTURE. MORE CONNECTION.</p><h1>A thought in.<br>A clear answer out.</h1><p>Text at the center. Voice when you need it.</p></section>
+    <details><summary>Connection settings</summary><label for="token">Application access token</label><input id="token" type="password" autocomplete="off" placeholder="Only if configured on the server"><p class="hint">Held in memory for this page only. This is not your HF token.</p></details>
+    <section id="conversation" aria-label="Conversation"><p id="empty" class="hint">Start with a question. This starter does not store conversation history on the server.</p></section>
+    <form id="composer">
+      <label for="text">Your message</label><textarea id="text" rows="3" maxlength="8000" required placeholder="What would you like to explore?"></textarea>
+      <div class="options"><label><input id="speak" type="checkbox"> Speak the answer</label><label>Language <select id="locale"><option value="en-US">English</option><option value="es-MX">Español</option></select></label></div>
+      <div class="actions"><button id="mic" type="button">Use microphone</button><button id="send" class="primary" type="submit">Send message ↗</button></div>
+      <p id="status" role="status" aria-live="polite">Ready for text.</p>
+      <p class="hint">Optional browser speech recognition may process audio through your browser vendor. Transcripts are editable before sending.</p>
+    </form>
+    <footer>TEXT · MCP · HUGGING FACE / OMNIROUTE · ORYX</footer>
+  </main>
+</body>
+</html>

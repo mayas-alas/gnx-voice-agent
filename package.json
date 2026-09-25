@@ -1,0 +1,18 @@
+{
+  "name": "gnx-voice-agent",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Composition-first text and voice runtime",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env app/server.js",
+    "dev": "node --watch --env-file-if-exists=.env app/server.js",
+    "mcp": "node --env-file-if-exists=.env mcp/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "express": "^5.1.0",
+    "zod": "^3.25.0"
+  }
+}
