@@ -23,11 +23,12 @@ CLOUD_ROUTE=public
 HF_TOKEN=hf_your_token
 HF_MODEL=your-supported-model
 
-OMNIROUTE_BASE_URL=http://localhost:20128/v1
+OMNIROUTE_BASE_URL=https://omniroute.gnx/v1
 OMNIROUTE_API_KEY=
 OMNIROUTE_MODEL=
 
-ORYX_BASE_URL=http://localhost:2022
+ORYX_BASE_URL=https://oryx.gnx
+ORYX_PUBLIC_BASE_URL=https://oryx.gnx
 ORYX_TOKEN=
 ORYX_VOICE_PATH=
 VOICE_ENABLED=false
@@ -56,7 +57,7 @@ npm start
 
 PowerShell users can use `Copy-Item .env.example .env` instead of `cp`.
 
-Open **http://127.0.0.1:8080**. `npm run dev` enables Node's file watcher. `npm run mcp` starts the built-in stdio MCP server for an external MCP host; it is not an interactive shell command.
+Open **https://voice.gnx** after configuring the server reverse proxy below. For local development, use **http://127.0.0.1:8080**. `npm run dev` enables Node's file watcher. `npm run mcp` starts the built-in stdio MCP server for an external MCP host; it is not an interactive shell command.
 
 The app starts without model credentials so the UI can be inspected; inference fails until configured. `/health/live` reports process liveness, not upstream readiness. No lockfile is included because dependencies have not been installed; generate and commit one when validating this baseline.
 
@@ -227,6 +228,20 @@ Response:
 Speech may also be `ready`, `unavailable`, or `failed`. Failed speech does not fail a successful text turn. Invalid input returns `400`, missing configured token `401`, simultaneous session work `409`, capacity exhaustion `429`, and capability failure `502`. There is no exactly-once guarantee.
 
 ## Deployment boundary
+
+### Server `*.gnx` routing
+
+`app.gnx` and `compute.gnx` are already occupied and must remain untouched. The deployment examples use these separate names; DNS and proxy configuration must be provisioned on your server:
+
+| Host | Purpose | Routing |
+| --- | --- | --- |
+| `https://voice.gnx` | GNX PWA + thin API | Proxy all paths to `127.0.0.1:8080` when the proxy shares the host |
+| `https://omniroute.gnx` | Private AI gateway | Proxy to the existing OmniRoute service; preserve `/v1/*` |
+| `https://oryx.gnx` | Oryx voice/media | Proxy to the existing Oryx deployment and its configured voice bridge/media paths |
+
+Keep the PWA and `/v1/*` on `voice.gnx`; no separate API domain or CORS setup is needed. Configure DNS resolution and HTTPS certificates trusted by both the browser and Node.js. For an internal CA, use the appropriate trust store / `NODE_EXTRA_CA_CERTS`; never disable TLS verification. Browser microphone and PWA features require a secure context.
+
+Set `GNX_API_TOKEN` before exposing `voice.gnx`, even though GNX binds to loopback. Restrict upstream admin interfaces: the Oryx hostname must not make its management endpoints publicly accessible. Media URLs must remain browser-reachable and independently authorized. These are configuration examples, not changes to your live DNS, certificates, or proxy. Local development defaults in code remain localhost; `.env` selects the server routes.
 
 Default binding is loopback. Set `GNX_API_TOKEN` for access control; binding to a non-loopback address requires it. Enter that **application token**, never `HF_TOKEN`, in the UI's connection settings. The UI keeps it only in page memory.
 
