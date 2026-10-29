@@ -53,7 +53,7 @@ export async function call(capability, args) {
   }
   const client = await connections.get(binding.server);
   const output = await client.callTool({ name: binding.tool, arguments: args }, undefined,
-    { timeout: env.REQUEST_TIMEOUT_MS + 2000 });
+    { timeout: (capability === 'voice.speak' ? env.VOICE_TIMEOUT_MS : env.REQUEST_TIMEOUT_MS) + 2000 });
   if (output.isError) throw new Error('Capability execution failed');
   const text = output.content?.find(item => item.type === 'text')?.text;
   if (!text) throw new Error('Capability must return JSON text');

@@ -4,13 +4,17 @@
   "private": true,
   "type": "module",
   "description": "Composition-first text and voice runtime",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node --env-file-if-exists=.env app/server.js",
     "dev": "node --watch --env-file-if-exists=.env app/server.js",
-    "mcp": "node --env-file-if-exists=.env mcp/runtime.js"
+    "mcp": "node --env-file-if-exists=.env mcp/runtime.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
+    "@huggingface/inference": "^4.13.30",
     "@modelcontextprotocol/sdk": "^1.17.0",
     "express": "^5.1.0",
     "zod": "^3.25.0"

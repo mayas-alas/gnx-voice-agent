@@ -1,0 +1,12 @@
+**
+!Containerfile
+!package.json
+!package-lock.json
+!app/
+!app/**
+!config/
+!config/**
+!mcp/
+!mcp/**
+!web/
+!web/**

@@ -12,12 +12,13 @@
 | Logical `model.complete` / `voice.speak` wiring | MCP bridge + config | Implemented; browser cannot choose servers/tools |
 | Public inference via `HF_TOKEN` | HF | Live MCP inference passed |
 | Private model routing/fallback/policy | OmniRoute | Route configured in code; live gateway not verified |
-| Voice generation/transformation/lifecycle/serving | Oryx | GNX caller implemented; actual Oryx primitive remains a deployment blocker |
+| Direct speech synthesis | Hugging Face Inference Providers | Implemented with official SDK; default English Kokoro/fal-ai; live credentialed acceptance pending |
+| Optional voice generation/transformation/lifecycle/serving | Oryx | Existing caller preserved; actual Oryx primitive remains a deployment blocker for this route only |
 | Persistent `AIBaseURL`, `AISecretKey`, `AIOrganization` | Oryx | Deployment responsibility; not configured or forwarded by GNX |
-| TTS model/voice/format | Oryx / OmniRoute / upstream | Removed from GNX ownership |
+| TTS model/provider selection | HF configuration or Oryx / upstream | HF model/provider configurable; Oryx retains its own settings |
 | Session correlation | GNX | Bounded transient IDs/refs only, no native session ownership |
 | MCP credential isolation | Per-server `env_allow` | Implemented; SDK basic OS environment remains available |
-| Media origin policy | API + CSP | Self and configured Oryx origin only |
+| Media origin policy | API + CSP | Remote URLs limited to self/Oryx; browser-local Blob playback for validated inline HF audio |
 | Trust for `*.gnx` TLS | Deployment certificate stores | Required; no insecure TLS bypass |
 
 ## External voice primitive contract
@@ -28,6 +29,8 @@ Oryx should reuse its existing speech/media primitives internally. `/terraform/v
 
 ## Configurable next steps, without enlarging the core
 
+- [x] Credential-free HF audio validation tests and API → MCP regression coverage for Oryx/auth/text fallback.
+- [ ] Live HF synthesis and browser playback with an inference-authorized token.
 - [ ] Real Oryx primitive and `Oryx → OmniRoute /v1/audio/speech → TTS` acceptance.
 - [ ] Real browser playback with Oryx-managed media authorization/expiry.
 - [ ] Bind existing tool-enabled reasoning to `model.complete` when needed, e.g. `https://reasoning.gnx/mcp`.

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { env, mediaOrigins } from '../config/env.js';
 import { capabilities, call, close } from '../mcp/bridge.js';
 import { correlate } from './correlation.js';
+import { inlineSpeech } from './audio.js';
 
 if (!['127.0.0.1', '::1', 'localhost'].includes(env.BIND_HOST) && !env.GNX_API_TOKEN) {
   throw new Error('Non-loopback binding requires GNX_API_TOKEN (use TLS at the deployment boundary)');
@@ -14,7 +15,7 @@ app.disable('x-powered-by');
 app.use((_req, res, next) => {
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('Referrer-Policy', 'no-referrer');
-  res.set('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' ${env.ORYX_PUBLIC_BASE_URL}; img-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'`);
+  res.set('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' blob: ${env.ORYX_PUBLIC_BASE_URL}; img-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'`);
   next();
 });
 app.get('/health/live', (_req, res) => res.json({ status: 'ok', version: '0.0.2' }));
@@ -68,11 +69,15 @@ app.post('/v1/turns', async (req, res) => {
       if (env.VOICE_ENABLED) {
         try {
           const audio = await call('voice.speak', { ...args, text: answer.text, refs: finalRefs });
-          if (audio.status !== 'ready' || typeof audio.url !== 'string') throw new Error('Invalid voice output');
-          const url = new URL(audio.url);
-          if (!mediaOrigins.has(url.origin) || url.username || url.password) throw new Error('Invalid audio URL');
+          if (audio.audio_base64 !== undefined) {
+            speech = inlineSpeech(audio);
+          } else {
+            if (audio.status !== 'ready' || typeof audio.url !== 'string') throw new Error('Invalid voice output');
+            const url = new URL(audio.url);
+            if (!mediaOrigins.has(url.origin) || url.username || url.password) throw new Error('Invalid audio URL');
+            speech = { status: 'ready', url: url.href, mime_type: audio.mime_type };
+          }
           finalRefs = correlate(input.session_id, input.turn_id, audio.refs || {});
-          speech = { status: 'ready', url: url.href, mime_type: audio.mime_type };
         } catch {
           speech = { status: 'failed', code: 'VOICE_UNAVAILABLE' };
         }

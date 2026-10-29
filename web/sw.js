@@ -1,4 +1,4 @@
-const CACHE = 'gnx-shell-0.0.2';
+const CACHE = 'gnx-shell-0.0.2-hf-voice';
 const SHELL = ['/', '/index.html', '/style.css', '/app.js', '/icon.svg', '/manifest.webmanifest'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));

@@ -5,14 +5,34 @@
 ```text
 PWA → text → voice.gnx → thin API → MCP model.complete → HF | omniroute.gnx
                                       ↓ final text
-                              MCP voice.speak → oryx.gnx → audio → PWA
+                              MCP voice.speak → Hugging Face TTS → audio → PWA
+                                              ↘ optional oryx.gnx → media URL
 ```
 
-TEXT is the protocol. MCP is the capability/control plane. `HF_TOKEN` is the public-cloud credential. OmniRoute is the private AI gateway. Oryx owns voice/media. GNX owns composition and minimal correlation only.
+TEXT is the protocol. MCP is the capability/control plane. `HF_TOKEN` is the public-cloud credential. OmniRoute is the private AI gateway. Hugging Face provides direct speech by default; the existing Oryx voice/media integration remains available.
 
 Tracking: [REALEASES.md](REALEASES.md) records release changes and verification; [FEATURES.md](FEATURES.md) records capability scope and pending work.
 
-## Configure service identities first
+## Quick start: Hugging Face text + voice
+
+1. Copy `.env.dev.example` to `.env` (do not overwrite an existing configured `.env`).
+2. Set `HF_TOKEN` in `.env` to a token with **Inference Providers** permission. Provider credits/billing must be available; repository write access alone is insufficient.
+3. Run `npm ci`, then `npm start`, and open `http://127.0.0.1:8080`.
+4. Send a message with **Speak the answer** checked, then press play on the returned audio.
+
+Defaults: `HF_MODEL=Qwen/Qwen3-8B`, `VOICE_ENABLED=true`, `VOICE_PROVIDER=huggingface`, `HF_TTS_MODEL=hexgrad/Kokoro-82M`, `HF_TTS_PROVIDER=fal-ai`. The default Kokoro route is **English only**; other languages require a compatible model/provider. Supported provider settings are `fal-ai`, `deepinfra`, and `hf-inference`; not every model is available on each. Availability and billing are controlled by Hugging Face/providers.
+
+`Maya-alas/gnx-voice-agent` hosts this application's source; it is not a deployed TTS model or inference endpoint. No Oryx deployment is needed for direct HF speech. The official Hugging Face SDK routes TTS, rather than assuming the chat endpoint supports speech. Credentials stay server-side. Audio is returned inline (maximum 5 MiB), played from a browser-local Blob URL, and released on session reset; it is not persisted or cached by the service worker. Speech failure still returns the text answer. This is generated audio with a play control, not automatic playback or full-duplex voice.
+
+**Existing deployments:** keep your current `.env`. An existing nonempty `ORYX_VOICE_PATH` retains Oryx when `VOICE_PROVIDER` is unset; you can also explicitly select `VOICE_PROVIDER=oryx`, or set `VOICE_PROVIDER=huggingface` and `VOICE_ENABLED=true` to enable direct HF speech. `VOICE_ENABLED=false` still disables synthesis. `CLOUD_ROUTE` controls text only; voice routing is explicit and independent.
+
+Container deployments can use `HF_TOKEN_FILE` and `GNX_API_TOKEN_FILE` with read-only mounted credentials instead of environment values. Set only one source per credential. The HF file path, not its contents, is allowlisted to the MCP child; the application token is not forwarded. `Containerfile` requires an operator-approved Node 22+ base pinned by digest; `.dockerignore` excludes credentials and unrelated working files. No OCI image is published automatically. Quetzalcoatl owns the optional LXC/Quadlet recipe and existing `voice.gnx` DNS/TLS route; this app does not configure the host.
+
+Run `npm test` for credential-free mocked provider and API/MCP regression tests. Live HF synthesis and browser playback require a separate credentialed acceptance check.
+
+## Configure service endpoints
+
+There is no required business naming hierarchy. GNX, Hugging Face, OmniRoute, and Oryx are integration names, not naming tiers. The `*.gnx` hostnames below are configurable deployment examples, not required business names. Existing API, MCP, and environment-variable names remain stable.
 
 Copy `.env.example` to `.env` for the server topology:
 
@@ -24,7 +44,7 @@ GNX_API_TOKEN=
 
 CLOUD_ROUTE=public
 HF_TOKEN=
-HF_MODEL=
+HF_MODEL=Qwen/Qwen3-8B
 HF_BASE_URL=https://router.huggingface.co/v1
 
 OMNIROUTE_BASE_URL=https://omniroute.gnx/v1
@@ -34,13 +54,16 @@ OMNIROUTE_MODEL=
 ORYX_BASE_URL=https://oryx.gnx
 ORYX_PUBLIC_BASE_URL=https://oryx.gnx
 ORYX_API_SECRET=
-VOICE_ENABLED=false
+VOICE_ENABLED=true
+VOICE_PROVIDER=huggingface
+HF_TTS_MODEL=hexgrad/Kokoro-82M
+HF_TTS_PROVIDER=fal-ai
 ORYX_VOICE_PATH=
 
 MCP_CONFIG_PATH=config/mcp.json
 ```
 
-`BIND_HOST` is a process binding, not product identity. `APP_ORIGIN` is the browser-facing origin and the allowlisted Origin header for API requests. Defaults in code use `*.gnx` too. `app.gnx` and `compute.gnx` remain untouched.
+`BIND_HOST` controls the process binding. `APP_ORIGIN` is the browser-facing origin and the allowlisted Origin header for API requests. Code defaults retain `*.gnx` for compatibility; configure your actual service URLs independently. `app.gnx` and `compute.gnx` remain untouched.
 
 For local development, copy `.env.dev.example` to `.env` instead. It explicitly uses loopback origins and ports. Do not use a different browser hostname without updating `APP_ORIGIN`.
 
@@ -86,9 +109,11 @@ Both capabilities receive `{session_id, turn_id, text, locale, refs}`. Their MCP
 {"status":"ready","url":"https://oryx.gnx/audio/reference.aac","mime_type":"audio/aac","refs":{"oryx_ref":"native-media-id"}}
 ```
 
+Direct HF speech instead returns `{status:"ready", audio_base64:"…", mime_type:"audio/wav"}` through MCP and in the API's `speech` field. The existing URL-based Oryx response remains supported unchanged.
+
 The bundled model capability performs **one stateless completion**, not an autonomous tool loop. Bind an existing reasoning capability if it needs tools or native conversation state. GNX keeps only expiring in-memory mappings of `session_id`, `turn_id`, and optional `hf_ref`, `omniroute_ref`, `mcp_ref`, `oryx_ref`. A response ID is not automatically a resumable session. No history, database, or credential belongs in these references.
 
-## Oryx owns voice and its AI configuration
+## Optional Oryx integration (VOICE_PROVIDER=oryx)
 
 Configure Oryx persistently at deployment time:
 
@@ -122,11 +147,11 @@ Expected Oryx primitive response:
 
 **Integration boundary:** no universal conversational TTS endpoint is claimed to exist in stock Oryx. This repository does not implement a new TTS server. Supply the actual Oryx-side primitive, or bind `voice.speak` to an existing MCP Oryx capability. `ORYX_VOICE_PATH` is deliberately blank until that interface is available. Do not point it at `/terraform/v1/dubbing/task-tts`: that endpoint serves Dubbing project/group audio, not arbitrary text synthesis. Do not revive AI-Talk.
 
-Enable `VOICE_ENABLED=true` once this path works. An external MCP voice binding does not require the bundled runtime's Oryx path. Failed speech preserves the text answer.
+Set `VOICE_PROVIDER=oryx` and `VOICE_ENABLED=true` once this path works. An external MCP voice binding does not require the bundled runtime's Oryx path. Failed speech preserves the text answer.
 
-Oryx owns audio authorization, expiry, transformation, serving, and cleanup. Returned media must be browser-reachable and independently authorized: the browser never receives the Oryx API secret. Relative URLs resolve against `ORYX_PUBLIC_BASE_URL`. API validation and CSP allow audio only from the application origin or configured Oryx public origin. HTTPS pages require HTTPS media. External redirects to other media origins are not enabled.
+Oryx owns audio authorization, expiry, transformation, serving, and cleanup. Returned media must be browser-reachable and independently authorized: the browser never receives the Oryx API secret. Relative URLs resolve against `ORYX_PUBLIC_BASE_URL`. API validation restricts returned media URLs to the application origin or configured Oryx public origin. CSP also permits browser-local Blob URLs for direct HF audio. HTTPS pages require HTTPS media. External redirects to other media origins are not enabled.
 
-For public HF-backed speech, the deployed Oryx integration must support the selected HF TTS surface; do not assume the HF chat router exposes a universal speech endpoint. The model-route switch does not silently reconfigure Oryx's stored AI settings.
+For HF-backed speech routed through Oryx (rather than the default direct HF integration), the deployed Oryx integration must support the selected HF TTS surface; do not assume the HF chat router exposes a universal speech endpoint. The model-route switch does not silently reconfigure Oryx's stored AI settings.
 
 ## API and PWA
 
@@ -154,7 +179,7 @@ The PWA handles only text, optional browser STT, transcript review, request stat
 
 Proxy `https://voice.gnx/*` to the GNX process, including `/v1/*`; no separate API hostname or CORS setup is needed. Set `GNX_API_TOKEN` before exposing the proxy even with loopback binding. Enter only that application token in the PWA; it remains in page memory.
 
-Configure DNS and trusted certificates for `*.gnx` on both the browser and runtime hosts. For a private CA, configure `NODE_EXTRA_CA_CERTS`; it is explicitly allowlisted for the bundled MCP child. Never disable TLS verification. Keep Oryx management interfaces protected even when serving media on its public origin.
+Configure DNS and trusted certificates for your chosen service hostnames on both the browser and runtime hosts. For a private CA, configure `NODE_EXTRA_CA_CERTS`; it is explicitly allowlisted for the bundled MCP child. Never disable TLS verification. Keep Oryx management interfaces protected even when serving media on its public origin.
 
 This remains a single-instance, shared-deployment-principal starter. The shared token is not per-user authorization. Place authentication, TLS, network restrictions, and rate limiting at the deployment boundary before public exposure. Correlation state is bounded and disappears on restart. No database, queues, agent framework, media proxy, or transactional lifecycle has been added.
 

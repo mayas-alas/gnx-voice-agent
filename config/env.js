@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import { secretValue } from './secrets.js';
 
-const bool = z.enum(['true', 'false']).default('false').transform(v => v === 'true');
+const bool = z.enum(['true', 'false']).default('true').transform(v => v === 'true');
 const httpUrl = z.string().url().refine(value => {
   const url = new URL(value);
   return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password;
@@ -13,7 +14,11 @@ const schema = z.object({
   GNX_API_TOKEN: z.string().default(''),
   CLOUD_ROUTE: z.enum(['public', 'private']).default('public'),
   HF_TOKEN: z.string().default(''),
-  HF_MODEL: z.string().default(''),
+  HF_MODEL: z.string().default('Qwen/Qwen3-8B'),
+  HF_TTS_MODEL: z.string().min(1).default('hexgrad/Kokoro-82M'),
+  HF_TTS_PROVIDER: z.enum(['fal-ai', 'deepinfra', 'hf-inference']).default('fal-ai'),
+  // Preserve existing configured Oryx deployments unless explicitly switched.
+  VOICE_PROVIDER: z.enum(['huggingface', 'oryx']).default(process.env.ORYX_VOICE_PATH ? 'oryx' : 'huggingface'),
   HF_BASE_URL: httpUrl.default('https://router.huggingface.co/v1'),
   OMNIROUTE_BASE_URL: httpUrl.default('https://omniroute.gnx/v1'),
   OMNIROUTE_API_KEY: z.string().default(''),
@@ -25,12 +30,13 @@ const schema = z.object({
   VOICE_ENABLED: bool,
   MCP_CONFIG_PATH: z.string().default('config/mcp.json'),
   REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(45000),
-  VOICE_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
+  VOICE_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
   CORRELATION_TTL_MS: z.coerce.number().int().positive().default(86400000),
   MAX_CORRELATIONS: z.coerce.number().int().positive().default(1000)
 });
 
-export const env = schema.parse(process.env);
+export const env = schema.parse({ ...process.env,
+  HF_TOKEN: secretValue('HF_TOKEN'), GNX_API_TOKEN: secretValue('GNX_API_TOKEN') });
 // Validate the native voice path only inside the built-in voice capability:
 // deployments may instead bind voice.speak to an external MCP service.
 export const mediaOrigins = new Set([env.APP_ORIGIN, env.ORYX_PUBLIC_BASE_URL]);

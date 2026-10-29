@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { env, modelRoute, mediaOrigins } from '../config/env.js';
+import { speakWithHuggingFace } from './hf-voice.js';
 
 const server = new McpServer({ name: 'gnx-runtime', version: '0.0.2' });
 const result = data => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
@@ -45,11 +46,14 @@ server.registerTool('model_complete', {
 });
 
 server.registerTool('voice_speak', {
-  description: 'Send final text to the configured Oryx-owned voice bridge; Oryx owns synthesis and media.',
+  description: 'Synthesize final text using Hugging Face, or the optional Oryx voice bridge.',
   inputSchema: { ...identity, text: z.string().min(1).max(32000), refs: z.record(z.string()).optional() }
 }, async ({ text, session_id, turn_id, locale }) => {
   try {
     if (!env.VOICE_ENABLED) return result({ status: 'unavailable', code: 'VOICE_DISABLED' });
+    if (env.VOICE_PROVIDER === 'huggingface') {
+      return result(await speakWithHuggingFace(text, locale, env));
+    }
     // This bridge contract is application-defined, NOT a claimed native Oryx endpoint.
     if (!env.ORYX_VOICE_PATH.startsWith('/') || !env.ORYX_API_SECRET) {
       throw new Error('Configure ORYX_VOICE_PATH and ORYX_API_SECRET for the deployed Oryx primitive');

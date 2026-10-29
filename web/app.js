@@ -3,6 +3,7 @@ let session = crypto.randomUUID();
 let pending = false;
 let recognition;
 let listening = false;
+const audioUrls = new Set();
 const status = text => { $('status').textContent = text; };
 function message(role, text) {
   $('empty')?.remove();
@@ -53,7 +54,14 @@ $('composer').addEventListener('submit', async event => {
       const audio = document.createElement('audio');
       audio.controls = true;
       audio.preload = 'none';
-      audio.src = data.speech.url;
+      if (data.speech.audio_base64) {
+        const bytes = Uint8Array.from(atob(data.speech.audio_base64), char => char.charCodeAt(0));
+        const url = URL.createObjectURL(new Blob([bytes], { type: data.speech.mime_type }));
+        audioUrls.add(url);
+        audio.src = url;
+      } else {
+        audio.src = data.speech.url;
+      }
       audio.addEventListener('error', () => status('Text is ready; audio is unavailable or expired.'));
       block.append(audio);
       status('Answer ready. Press play to listen.');
@@ -74,6 +82,8 @@ $('composer').addEventListener('submit', async event => {
 $('reset').addEventListener('click', () => {
   recognition?.abort();
   document.querySelectorAll('audio').forEach(audio => audio.pause());
+  audioUrls.forEach(url => URL.revokeObjectURL(url));
+  audioUrls.clear();
   session = crypto.randomUUID();
   $('conversation').replaceChildren();
   status('New correlation session. This does not delete upstream provider data.');

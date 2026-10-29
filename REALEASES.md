@@ -2,6 +2,17 @@
 
 The filename `REALEASES.md` is retained as requested. Feature ownership and future scope are tracked in [FEATURES.md](FEATURES.md).
 
+## Unreleased — direct Hugging Face voice
+
+- Added direct HF TTS using the official SDK and the existing server-side `HF_TOKEN`; default model/provider is English `hexgrad/Kokoro-82M` via `fal-ai`.
+- Preserved the Oryx implementation and URL response. Existing nonempty `ORYX_VOICE_PATH` keeps Oryx when no explicit voice provider is set.
+- Added bounded inline audio validation and browser-local Blob playback; credentials remain server-side. Text survives speech failure.
+- New development defaults enable speech; explicit `VOICE_ENABLED=false` still works. No local credentials or deployment configuration changed.
+- Added `npm test`: mocked HF synthesis/validation plus real local API → stdio MCP → mock Oryx, auth, disabled voice and HF failure fallback.
+- Live HF provider mapping checked publicly; credentialed synthesis and real browser playback **not yet verified**. Repo access does not imply inference permission or available credits.
+
+Historical release records follow unchanged.
+
 ## v0.0.2 — service identity and runtime wiring
 
 **Status: code implemented; live Oryx release gate remains blocked.**
